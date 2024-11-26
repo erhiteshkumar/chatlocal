@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Send, AlertCircle, RefreshCw, Copy, Check, Plus, Trash2, MessageSquare } from 'lucide-react';
 
-// Custom Code Block Component without external dependencies
+// Code Block Component
 const CodeBlock = ({ content, language = 'text' }) => {
   const [copied, setCopied] = useState(false);
 
@@ -35,6 +35,7 @@ const CodeBlock = ({ content, language = 'text' }) => {
   );
 };
 
+// Message Content Component
 const MessageContent = ({ content }) => {
   const extractCodeBlocks = (text) => {
     const codeBlockRegex = /```(\w*)\n([\s\S]*?)```/g;
@@ -124,48 +125,50 @@ const MessageContent = ({ content }) => {
 };
 
 // Chat Sidebar Component
-const ChatSidebar = ({ chats, activeChatId, onSelectChat, onNewChat, onDeleteChat }) => (
-  <div className="w-64 bg-gray-800 text-white p-4 flex flex-col h-full">
-    <div className="flex justify-between items-center mb-4">
-      <h2 className="text-xl font-bold">Chats</h2>
-      <button
-        onClick={onNewChat}
-        className="p-2 hover:bg-gray-700 rounded"
-        title="New Chat"
-      >
-        <Plus size={20} />
-      </button>
-    </div>
-    <div className="flex-grow overflow-y-auto">
-      {chats.map(chat => (
-        <div
-          key={chat.id}
-          className={`flex justify-between items-center p-2 rounded mb-2 cursor-pointer ${
-            chat.id === activeChatId ? 'bg-gray-700' : 'hover:bg-gray-700'
-          }`}
-          onClick={() => onSelectChat(chat.id)}
+const ChatSidebar = ({ chats, activeChatId, onSelectChat, onNewChat, onDeleteChat }) => {
+  return (
+    <div className="w-64 bg-gray-800 text-white p-4 flex flex-col h-full">
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-xl font-bold">Chats</h2>
+        <button
+          onClick={onNewChat}
+          className="p-2 hover:bg-gray-700 rounded"
+          title="New Chat"
         >
-          <div className="flex items-center space-x-2 overflow-hidden">
-            <MessageSquare size={16} />
-            <span className="truncate">{chat.title || 'New Chat'}</span>
+          <Plus size={20} />
+        </button>
+      </div>
+      <div className="flex-grow overflow-y-auto">
+        {chats.map(chat => (
+          <div
+            key={chat.id}
+            className={`flex justify-between items-center p-2 rounded mb-2 cursor-pointer ${
+              chat.id === activeChatId ? 'bg-gray-700' : 'hover:bg-gray-700'
+            }`}
+            onClick={() => onSelectChat(chat.id)}
+          >
+            <div className="flex items-center space-x-2 overflow-hidden">
+              <MessageSquare size={16} />
+              <span className="truncate">{chat.title || 'New Chat'}</span>
+            </div>
+            {chat.id === activeChatId && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDeleteChat(chat.id);
+                }}
+                className="p-1 hover:bg-gray-600 rounded"
+                title="Delete Chat"
+              >
+                <Trash2 size={16} />
+              </button>
+            )}
           </div>
-          {chat.id === activeChatId && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onDeleteChat(chat.id);
-              }}
-              className="p-1 hover:bg-gray-600 rounded"
-              title="Delete Chat"
-            >
-              <Trash2 size={16} />
-            </button>
-          )}
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 // Main Chat Component
 const OllamaChatApp = () => {
@@ -175,12 +178,15 @@ const OllamaChatApp = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [selectedModel, setSelectedModel] = useState('llama2');
-  const [availableModels, setAvailableModels] = useState([]);
+  const [availableModels, setAvailableModels] = useState(['llama2']);
   const messagesEndRef = useRef(null);
+  const activeChat = chats.find(chat => chat.id === activeChatId);
 
-  // Load chats from localStorage on mount
+  // Load chats and model preference from localStorage
   useEffect(() => {
     const savedChats = localStorage.getItem('ollama-chats');
+    const savedModel = localStorage.getItem('ollama-selected-model');
+    
     if (savedChats) {
       const parsedChats = JSON.parse(savedChats);
       setChats(parsedChats);
@@ -188,31 +194,38 @@ const OllamaChatApp = () => {
         setActiveChatId(parsedChats[0].id);
       }
     }
+    
+    if (savedModel) {
+      setSelectedModel(savedModel);
+    }
   }, []);
 
-  // Save chats to localStorage whenever they change
+  // Save to localStorage whenever chats or selected model changes
   useEffect(() => {
-    localStorage.setItem('ollama-chats', JSON.stringify(chats));
-  }, [chats]);
+    if (chats.length > 0) {
+      localStorage.setItem('ollama-chats', JSON.stringify(chats));
+    }
+    localStorage.setItem('ollama-selected-model', selectedModel);
+  }, [chats, selectedModel]);
 
   // Fetch available models
   useEffect(() => {
-    const fetchAvailableModels = async () => {
+    const fetchModels = async () => {
       try {
         const response = await fetch('http://localhost:11434/api/tags');
+        if (!response.ok) throw new Error('Failed to fetch models');
         const data = await response.json();
-        const models = data.models.map(model => model.name);
-        setAvailableModels(models.length > 0 ? models : ['llama2', 'mistral', 'phi']);
+        const models = data.models?.map(model => model.name) || ['llama2'];
+        setAvailableModels(models);
       } catch (err) {
         console.error('Failed to fetch models:', err);
-        setAvailableModels(['llama2', 'mistral', 'phi']);
+        setError('Failed to fetch available models');
       }
     };
-
-    fetchAvailableModels();
+    fetchModels();
   }, []);
 
-  // Auto scroll
+  // Auto scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chats, activeChatId]);
@@ -226,29 +239,15 @@ const OllamaChatApp = () => {
     };
     setChats(prevChats => [newChat, ...prevChats]);
     setActiveChatId(newChat.id);
-  };
-
-  const deleteChat = (chatId) => {
-    setChats(prevChats => prevChats.filter(chat => chat.id !== chatId));
-    if (activeChatId === chatId) {
-      setActiveChatId(chats.find(chat => chat.id !== chatId)?.id || null);
-    }
-  };
-
-  const updateChatTitle = (chatId, firstMessage) => {
-    setChats(prevChats => 
-      prevChats.map(chat => 
-        chat.id === chatId
-          ? { ...chat, title: firstMessage.slice(0, 30) + (firstMessage.length > 30 ? '...' : '') }
-          : chat
-      )
-    );
+    return newChat;
   };
 
   const handleSendMessage = async () => {
     if (!inputMessage.trim()) return;
-    if (!activeChatId) {
-      createNewChat();
+    
+    let currentChat = activeChat;
+    if (!currentChat) {
+      currentChat = createNewChat();
     }
 
     const userMessage = { role: 'user', content: inputMessage };
@@ -256,20 +255,15 @@ const OllamaChatApp = () => {
     // Update chat with user message
     setChats(prevChats => 
       prevChats.map(chat => 
-        chat.id === activeChatId
+        chat.id === currentChat.id
           ? {
               ...chat,
-              messages: [...chat.messages, userMessage]
+              messages: [...chat.messages, userMessage],
+              title: chat.messages.length === 0 ? inputMessage.slice(0, 30) : chat.title
             }
           : chat
       )
     );
-
-    // Update title if this is the first message
-    const activeChat = chats.find(chat => chat.id === activeChatId);
-    if (activeChat && activeChat.messages.length === 0) {
-      updateChatTitle(activeChatId, inputMessage);
-    }
 
     setInputMessage('');
     setIsLoading(true);
@@ -278,38 +272,23 @@ const OllamaChatApp = () => {
     try {
       const response = await fetch('http://localhost:11434/api/chat', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: selectedModel,
-          messages: [
-            ...activeChat.messages,
-            userMessage
-          ],
+          messages: [...currentChat.messages, userMessage],
           stream: false
         })
       });
 
-      if (!response.ok) {
-        throw new Error('Network response was not ok');
-      }
-
-      const data = await response.json();
+      if (!response.ok) throw new Error('Failed to get response');
       
-      const modelMessage = { 
-        role: 'assistant', 
-        content: data.message.content 
-      };
+      const data = await response.json();
+      const modelMessage = { role: 'assistant', content: data.message.content };
 
-      // Update chat with model response
       setChats(prevChats => 
         prevChats.map(chat => 
-          chat.id === activeChatId
-            ? {
-                ...chat,
-                messages: [...chat.messages, modelMessage]
-              }
+          chat.id === currentChat.id
+            ? { ...chat, messages: [...chat.messages, modelMessage] }
             : chat
         )
       );
@@ -321,7 +300,12 @@ const OllamaChatApp = () => {
     }
   };
 
-  const activeChat = chats.find(chat => chat.id === activeChatId);
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    }
+  };
 
   return (
     <div className="flex h-screen bg-gray-100">
@@ -330,11 +314,16 @@ const OllamaChatApp = () => {
         activeChatId={activeChatId}
         onSelectChat={setActiveChatId}
         onNewChat={createNewChat}
-        onDeleteChat={deleteChat}
+        onDeleteChat={(id) => {
+          setChats(prev => prev.filter(chat => chat.id !== id));
+          if (activeChatId === id) {
+            const remaining = chats.filter(chat => chat.id !== id);
+            setActiveChatId(remaining[0]?.id || null);
+          }
+        }}
       />
 
       <div className="flex-1 flex flex-col">
-        {/* Model Selection Dropdown */}
         <div className="bg-white p-4 border-b flex items-center space-x-4">
           <label className="font-medium">Model:</label>
           <select 
@@ -343,29 +332,17 @@ const OllamaChatApp = () => {
             className="p-2 border rounded"
           >
             {availableModels.map(model => (
-              <option key={model} value={model}>
-                {model}
-              </option>
+              <option key={model} value={model}>{model}</option>
             ))}
           </select>
         </div>
 
-        {/* Messages Area */}
         <div className="flex-grow overflow-auto p-4 space-y-4">
           {activeChat?.messages.map((msg, index) => (
-            <div 
-              key={index} 
-              className={`flex ${
-                msg.role === 'user' ? 'justify-end' : 'justify-start'
-              }`}
-            >
-              <div 
-                className={`max-w-[70%] p-3 rounded-lg ${
-                  msg.role === 'user' 
-                    ? 'bg-blue-500 text-white' 
-                    : 'bg-white text-gray-800 border'
-                }`}
-              >
+            <div key={index} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+              <div className={`max-w-[70%] p-3 rounded-lg ${
+                msg.role === 'user' ? 'bg-blue-500 text-white' : 'bg-white text-gray-800 border'
+              }`}>
                 <MessageContent content={msg.content} />
               </div>
             </div>
@@ -389,15 +366,18 @@ const OllamaChatApp = () => {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Input Area */}
         <div className="bg-white p-4 border-t flex">
-          <input 
-            type="text" 
+        <textarea 
+            rows="1"
             value={inputMessage}
-            onChange={(e) => setInputMessage(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-            placeholder="Type your message..."
-            className="flex-grow p-2 border rounded-l-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            onChange={(e) => {
+              setInputMessage(e.target.value);
+              e.target.style.height = 'auto';
+              e.target.style.height = `${Math.min(e.target.scrollHeight, 200)}px`;
+            }}
+            onKeyDown={handleKeyPress}
+            placeholder="Type your message... (Shift + Enter for new line)"
+            className="flex-grow p-2 border rounded-l-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none min-h-[40px] max-h-[200px] overflow-y-auto"
           />
           <button 
             onClick={handleSendMessage}
